@@ -18,7 +18,6 @@ from heisenbridge.command_parse import CommandManager
 from heisenbridge.command_parse import CommandParser
 from heisenbridge.command_parse import CommandParserError
 from heisenbridge.parser import IRCMatrixParser
-from heisenbridge.parser import IRCRecursionContext
 from heisenbridge.room import Room
 
 
@@ -215,6 +214,7 @@ class PrivateRoom(Room):
     force_forward = False
 
     commands: CommandManager
+    parser: IRCMatrixParser
 
     def init(self) -> None:
         self.name = None
@@ -222,6 +222,7 @@ class PrivateRoom(Room):
         self.network_id = None
         self.network_name = None  # deprecated
         self.media = []
+        self.parser = IRCMatrixParser(self.displaynames)
 
         self.commands = CommandManager()
 
@@ -453,13 +454,11 @@ class PrivateRoom(Room):
         (plain, formatted) = parse_irc_formatting(" ".join(event.arguments))
         self.send_notice_html(f"<b>{str(event.source)}</b> sent <b>CTCP REPLY {html.escape(plain)}</b> (ignored)")
 
-    def _process_event_content(self, event, prefix, reply_to=None):
+    async def _process_event_content(self, event, prefix, reply_to=None):
         content = event.content
 
         if content.formatted_body:
-            lines = str(
-                IRCMatrixParser.parse(content.formatted_body, IRCRecursionContext(displaynames=self.displaynames))
-            ).split("\n")
+            lines = str(await self.parser.parse(content.formatted_body)).split("\n")
         elif content.body:
             body = content.body
 
@@ -523,11 +522,11 @@ class PrivateRoom(Room):
                 reply_to = await self.az.intent.get_event(self.id, rel_event.content.get_reply_to())
 
         if event.content.get_edit():
-            messages = self._process_event_content(event, prefix, reply_to)
+            messages = await self._process_event_content(event, prefix, reply_to)
             event_id = event.content.relates_to.event_id
             prev_event = self.last_messages[event.sender]
             if prev_event and prev_event.event_id == event_id:
-                old_messages = self._process_event_content(prev_event, prefix, reply_to)
+                old_messages = await self._process_event_content(prev_event, prefix, reply_to)
 
                 mlen = max(len(messages), len(old_messages))
                 edits = []
@@ -557,7 +556,7 @@ class PrivateRoom(Room):
         else:
             # keep track of the last message
             self.last_messages[event.sender] = event
-            messages = self._process_event_content(event, prefix, reply_to)
+            messages = await self._process_event_content(event, prefix, reply_to)
 
         for i, message in enumerate(messages):
             if self.max_lines > 0 and i == self.max_lines - 1 and len(messages) > self.max_lines:

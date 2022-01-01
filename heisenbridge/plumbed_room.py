@@ -241,7 +241,7 @@ class PlumbedRoom(ChannelRoom):
                 timestamp=None,
                 content=TextMessageEventContent(body=self.serv.mxc_to_url(event.content.url, event.content.body)),
             )
-            messages = self._process_event_content(media_event, prefix=f"<{sender}> ")
+            messages = await self._process_event_content(media_event, prefix=f"<{sender}> ")
             self.network.conn.privmsg(self.name, messages[0])
 
             self.react(event.event_id, "\U0001F517")  # link
